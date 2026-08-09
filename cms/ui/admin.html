@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Website bearbeiten — Christine Guttmann</title>
+<link rel="stylesheet" href="/__cms/admin.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">
+    <strong>Website bearbeiten</strong>
+    <span class="hint" id="hint">Klicke im Vorschaufenster auf einen Text oder ein Bild.</span>
+  </div>
+
+  <nav class="pages" id="pages" aria-label="Seiten"></nav>
+
+  <div class="actions">
+    <span class="state" id="state"></span>
+    <button id="btn-discard" class="ghost" title="Alle nicht veröffentlichten Änderungen verwerfen">Verwerfen</button>
+    <button id="btn-save" class="primary" disabled>Speichern</button>
+    <button id="btn-publish" class="publish">Veröffentlichen</button>
+  </div>
+</header>
+
+<main>
+  <iframe id="preview" title="Vorschau" src="/preview/index.html"></iframe>
+</main>
+
+<!-- Image picker -->
+<div class="modal" id="picker" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Bild auswählen</h2>
+      <input type="search" id="picker-search" placeholder="Suchen…" autocomplete="off">
+      <button class="ghost" id="picker-close" aria-label="Schließen">&times;</button>
+    </div>
+    <div class="upload-row">
+      <label class="upload-btn">
+        Neues Bild vom Computer…
+        <input type="file" id="picker-file" accept="image/jpeg,image/png,image/webp" hidden>
+      </label>
+      <span class="upload-note">Große Fotos werden automatisch auf Webgröße verkleinert.</span>
+    </div>
+    <div class="thumbs" id="picker-thumbs"></div>
+  </div>
+</div>
+
+<!-- Publish / progress dialog -->
+<div class="modal" id="dialog" hidden>
+  <div class="modal-box narrow">
+    <h2 id="dialog-title">Veröffentlichen</h2>
+    <div id="dialog-body"></div>
+    <div class="dialog-actions" id="dialog-actions"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/__cms/admin.js"></script>
+</body>
+</html>

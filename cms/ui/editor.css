@@ -1,0 +1,103 @@
+/* Injected into the preview page only — never part of the published site. */
+
+.cms-editing [data-cms] {
+  outline: 1px dashed rgb(122 46 46 / 28%);
+  outline-offset: 3px;
+  transition: outline-color .15s;
+}
+.cms-editing [data-cms]:hover { outline-color: rgb(122 46 46 / 55%); }
+
+.cms-editing [contenteditable="true"] {
+  cursor: text;
+  border-radius: 3px;
+}
+.cms-editing [contenteditable="true"]:hover {
+  background: rgb(122 46 46 / 6%);
+  box-shadow: 0 0 0 4px rgb(122 46 46 / 6%);
+}
+.cms-editing [contenteditable="true"]:focus {
+  outline: 2px solid #7a2e2e;
+  outline-offset: 2px;
+  background: rgb(255 255 255 / 65%);
+}
+
+.cms-editing [data-cms-hot] { position: relative; }
+.cms-editing [data-cms-hot]:hover { box-shadow: 0 0 0 2px rgb(122 46 46 / 45%); }
+
+.cms-editing [data-cms] img { cursor: pointer; }
+
+/* ---------- floating controls ---------- */
+
+.cms-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2147483000;
+}
+
+.cms-bar {
+  position: fixed;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px;
+  background: #1c1c1a;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+  pointer-events: auto;
+  font: 13px/1 "Segoe UI", system-ui, sans-serif;
+}
+.cms-bar[hidden] { display: none; }
+
+.cms-btn {
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  padding: 6px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cms-btn:hover { background: rgb(255 255 255 / 18%); }
+
+.cms-select {
+  font: inherit;
+  border: 0;
+  border-radius: 5px;
+  padding: 5px 6px;
+  background: rgb(255 255 255 / 15%);
+  color: #fff;
+  cursor: pointer;
+}
+.cms-select option { color: #1c1c1a; }
+
+/* ---------- add button ---------- */
+
+.cms-add {
+  display: block;
+  border: 2px dashed rgb(122 46 46 / 45%);
+  background: rgb(122 46 46 / 6%);
+  color: #7a2e2e;
+  font: 600 14px/1 "Segoe UI", system-ui, sans-serif;
+  padding: 14px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  width: 100%;
+  min-height: 60px;
+}
+.cms-add:hover { background: rgb(122 46 46 / 14%); }
+
+/* The slider stacks its slides, so the add button needs pulling out of the flow. */
+.slides .cms-add {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  width: auto;
+  min-height: 0;
+  padding: 8px 14px;
+  background: rgb(255 255 255 / 92%);
+  z-index: 6;
+}
+
+.exhibitions .cms-add { margin-top: 10px; }

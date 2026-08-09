@@ -1,0 +1,11 @@
+# Sicherungskopien, die der Editor vor jedem Speichern anlegt
+.cms-backups/
+
+# Zwischendateien beim Speichern
+*.cms-tmp
+
+# Betriebssystem / Editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/

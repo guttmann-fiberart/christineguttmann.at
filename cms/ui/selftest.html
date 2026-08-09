@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>CMS Selbsttest</title>
+</head>
+<body>
+<!-- Headless harness: stands in for admin.js, drives the editor inside the
+     iframe and prints the operations it produces. Open with ?page=vita.html
+     to test another page. Not part of the published site. -->
+<pre id="out">running…</pre>
+<iframe id="frame" style="width:1200px;height:800px;border:1px solid #ccc"></iframe>
+
+<script>
+const results = [];
+// Render as we go: if something throws, the output still shows how far we got.
+const check = (name, ok, extra) => {
+  results.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  — ' + extra : ''}`);
+  document.getElementById('out').textContent = 'CMSTEST-BEGIN\n' + results.join('\n');
+};
+window.addEventListener('error', (e) => check('uncaught', false, `${e.message} @${e.filename}:${e.lineno}`));
+window.addEventListener('unhandledrejection', (e) => check('unhandled rejection', false, String(e.reason)));
+
+let editor = null;
+let dirtyCount = 0;
+let pickNext = null;
+
+window.CMSAdmin = {
+  register(api) { editor = api; },
+  pageChanged() {},
+  setDirty() { dirtyCount++; },
+  pickImage() { return Promise.resolve(pickNext); },
+  toast() {},
+  hint() {},
+};
+
+const frame = document.getElementById('frame');
+const params = new URLSearchParams(location.search);
+const page = params.get('page') || 'index.html';
+
+const done = (extra) => {
+  document.getElementById('out').textContent =
+    'CMSTEST-BEGIN\n' + results.join('\n') + (extra ? '\n' + extra : '') + '\nCMSTEST-END';
+  document.title = 'done';
+};
+
+frame.addEventListener('load', () => {
+  setTimeout(() => { try { run(); } catch (e) { check('harness', false, e.message + ' | ' + e.stack); done(); } }, 300);
+});
+frame.src = '/preview/' + page;
+
+function run() {
+  const doc = frame.contentDocument;
+  const win = frame.contentWindow;
+  check('editor registered', !!editor);
+  if (!editor) return done();
+
+  check('no ops on a fresh page', Object.keys(editor.collectOps()).length === 0,
+    JSON.stringify(Object.keys(editor.collectOps())));
+
+  if (params.get('mode') === 'roundtrip') return runRoundtrip(doc);
+  if (page === 'index.html') return runIndex(doc, win);
+  if (page === 'ausstellungen.html') return runExhibitions(doc);
+  return done();
+}
+
+function runIndex(doc, win) {
+  /* 1. plain text edit */
+  const h3 = doc.querySelector('[data-cms="aktuell-titel"]');
+  h3.textContent = 'ganz aktuell';
+  let ops = editor.collectOps();
+  check('text edit -> single setInner',
+    ops['aktuell-titel'] && ops['aktuell-titel'].length === 1 &&
+    ops['aktuell-titel'][0].op === 'setInner' &&
+    ops['aktuell-titel'][0].html === 'ganz aktuell',
+    JSON.stringify(ops['aktuell-titel']));
+  check('  untouched regions produce nothing', !ops['projekte'] && !ops['startseite-slider'],
+    Object.keys(ops).join(','));
+  h3.textContent = 'aktuell';
+
+  /* 2. b/i normalised to strong/em */
+  const rich = doc.querySelector('[data-cms="aktuell-text"]');
+  const originalRich = rich.innerHTML;
+  rich.innerHTML = 'Hallo <b>fett</b> und <i>kursiv</i>';
+  ops = editor.collectOps();
+  check('bold/italic normalised to strong/em',
+    ops['aktuell-text'][0].html === 'Hallo <strong>fett</strong> und <em>kursiv</em>',
+    ops['aktuell-text'][0].html);
+  rich.innerHTML = originalRich;
+
+  /* 3. image swap inside a list item */
+  const grid = doc.querySelector('[data-cms="projekte"]');
+  const firstItem = grid.children[0];
+  firstItem.querySelector('img').setAttribute('src', 'assets/img/Farbspule.jpg');
+  firstItem.setAttribute('href', 'assets/img/Farbspule.jpg');
+  ops = editor.collectOps();
+  const spec = ops['projekte'] && ops['projekte'][0].items;
+  check('image swap -> setItems with one edited item',
+    !!spec && spec.length === 34 && spec[0].edits.length === 2 && spec[1].edits.length === 0,
+    spec ? `items=${spec.length} edits0=${JSON.stringify(spec[0].edits)}` : 'none');
+  check('  every entry keeps its original index',
+    !!spec && spec.every((e, i) => e.ref === i));
+
+  /* 4. reorder */
+  grid.insertBefore(grid.children[2], grid.children[0]);
+  ops = editor.collectOps();
+  const reordered = ops['projekte'][0].items;
+  check('reorder -> refs follow the moved item',
+    reordered[0].ref === 2 && reordered[1].ref === 0 && reordered[2].ref === 1,
+    reordered.slice(0, 4).map((e) => e.ref).join(','));
+
+  /* 5. delete + duplicate */
+  const contentKids = (el) => [...el.children].filter((c) => !c.classList.contains('cms-ui'));
+  const beforeCount = contentKids(grid).length;
+  grid.children[5].remove();
+  const copy = grid.children[1].cloneNode(true);
+  grid.children[1].after(copy);
+  ops = editor.collectOps();
+  const after = ops['projekte'][0].items;
+  check('delete + duplicate keeps count right',
+    after.length === beforeCount && beforeCount === 34,   // -1 then +1
+    `before=${beforeCount} after=${after.length}`);
+  check('  duplicate reuses its source index', after[1].ref === after[2].ref,
+    `${after[1].ref} vs ${after[2].ref}`);
+
+  /* 6. the add button must never be treated as content */
+  check('add button excluded from items',
+    !after.some((e) => Number.isNaN(e.ref)) &&
+    !doc.querySelector('[data-cms="projekte"] > .cms-add[data-cms-oi]'),
+    'ok');
+
+  /* 7. slider: is-active is pinned to the first slide */
+  const slides = doc.querySelector('[data-cms="startseite-slider"]');
+  slides.insertBefore(slides.children[2], slides.children[0]);
+  ops = editor.collectOps();
+  const sl = ops['startseite-slider'][0].items;
+  const cls = sl.map((e) => {
+    const a = e.edits.find((x) => x.op === 'setAttr' && x.name === 'class');
+    return a ? a.value : '(unchanged)';
+  });
+  check('slider class pinned to first slide',
+    cls[0] === 'slide is-active' && cls.slice(1).every((c) => c === 'slide' || c === '(unchanged)'),
+    cls.join(' | '));
+
+  /* 8. stepping the slider must not create ops */
+  const nextArrow = doc.querySelector('.slider-arrow.next');
+  const opsBefore = JSON.stringify(editor.collectOps()['startseite-slider']);
+  nextArrow.click(); nextArrow.click();
+  const opsAfter = JSON.stringify(editor.collectOps()['startseite-slider']);
+  check('browsing slides creates no changes', opsBefore === opsAfter);
+
+  /* 9. filtering must not create ops */
+  const filter = doc.querySelector('.filter[data-filter="filzwerk"]');
+  const projBefore = JSON.stringify(editor.collectOps()['projekte']);
+  filter.click();
+  const projAfter = JSON.stringify(editor.collectOps()['projekte']);
+  check('filtering creates no changes', projBefore === projAfter);
+
+  /* 10. dirty tracking on the paths a real user takes */
+  dirtyCount = 0;
+  h3.dispatchEvent(new win.Event('input', { bubbles: true }));
+  check('typing marks the page dirty', dirtyCount === 1, `${dirtyCount}`);
+
+  const addBtn = doc.querySelector('[data-cms="projekte"] > .cms-add');
+  check('add button exists', !!addBtn);
+  if (addBtn) {
+    const n = contentKids(grid).length;
+    pickNext = null;                        // simulate cancelling the image picker
+    addBtn.click();
+    check('add button appends an item', contentKids(grid).length === n + 1,
+      `${n} -> ${contentKids(grid).length}`);
+    check('  and marks dirty', dirtyCount === 2, `${dirtyCount}`);
+    const spec2 = editor.collectOps()['projekte'][0].items;
+    check('  new item reuses the last item as template',
+      spec2.length === n + 1 && spec2[n].ref === spec2[n - 1].ref,
+      `${spec2[n] && spec2[n].ref} vs ${spec2[n - 1] && spec2[n - 1].ref}`);
+  }
+
+  /* markSaved re-baselines so the next save sends nothing */
+  editor.markSaved();
+  check('markSaved clears pending ops', Object.keys(editor.collectOps()).length === 0,
+    JSON.stringify(Object.keys(editor.collectOps())));
+
+  /* 11. editor chrome never leaks into saved html */
+  const html = JSON.stringify(editor.collectOps());
+  check('no editor markup in ops',
+    !/cms-ui|cms-add|contenteditable|data-cms-oi|data-cms-hot|cms-bar/.test(html),
+    (html.match(/cms-[a-z]+/g) || []).slice(0, 3).join(','));
+
+  done();
+}
+
+/* Two consecutive save cycles — the second one catches a stale baseline.
+ * Uses synchronous XHR: headless Chrome's virtual clock races ahead of real
+ * network I/O, so an async harness would be dumped before it finished. */
+function runRoundtrip(doc) {
+  const request = (method, url, body) => {
+    const x = new XMLHttpRequest();
+    x.open(method, url, false);
+    if (body !== undefined) x.setRequestHeader('Content-Type', 'application/json');
+    x.send(body === undefined ? null : JSON.stringify(body));
+    return { status: x.status, text: x.responseText };
+  };
+
+  const save = () => {
+    const r = request('POST', '/api/save', { page, regions: editor.collectOps() });
+    const data = JSON.parse(r.text || '{}');
+    if (r.status === 200) editor.markSaved();
+    return { status: r.status, data };
+  };
+
+  try {
+    /* cycle 1: reorder the gallery and rename an item */
+    const grid = doc.querySelector('[data-cms="projekte"]');
+    grid.insertBefore(grid.children[3], grid.children[0]);
+    grid.children[0].querySelector('h2').textContent = 'Ganz neuer Titel';
+    const r1 = save();
+    check('cycle 1 saved', r1.status === 200 && r1.data.changed, JSON.stringify(r1.data.error || ''));
+    check('  nothing pending afterwards', Object.keys(editor.collectOps()).length === 0,
+      JSON.stringify(Object.keys(editor.collectOps())));
+
+    /* cycle 2: edit again, on top of the freshly written file */
+    doc.querySelector('[data-cms="aktuell-titel"]').textContent = 'zweite Runde';
+    grid.children[1].querySelector('h2').textContent = 'Zweiter Titel';
+    const r2 = save();
+    check('cycle 2 saved', r2.status === 200 && r2.data.changed, JSON.stringify(r2.data.error || ''));
+    check('  nothing pending afterwards', Object.keys(editor.collectOps()).length === 0);
+
+    /* verify by re-fetching the page from disk */
+    const html = request('GET', '/preview/' + page).text;
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    const items = parsed.querySelectorAll('[data-cms="projekte"] > .item');
+    check('file on disk has both titles',
+      items[0].querySelector('h2').textContent === 'Ganz neuer Titel' &&
+      items[1].querySelector('h2').textContent === 'Zweiter Titel',
+      `${items[0].querySelector('h2').textContent} / ${items[1].querySelector('h2').textContent}`);
+    check('  item count preserved', items.length === 34, String(items.length));
+    check('  aktuell heading written',
+      parsed.querySelector('[data-cms="aktuell-titel"]').textContent === 'zweite Runde');
+    check('  no editor markup written to disk',
+      !/cms-ui|cms-add|contenteditable|data-cms-oi|data-cms-hot/.test(html),
+      (html.match(/cms-(ui|add|oi|hot)/g) || []).slice(0, 3).join(','));
+
+    // the raw file, not the preview (which swaps main.js for the editor)
+    const raw = request('GET', '/' + page).text;
+    check('  raw file keeps main.js and closing tags',
+      raw.includes('<script src="assets/js/main.js"><\/script>') &&
+      raw.includes('</body>') && raw.includes('</html>'),
+      `main.js=${raw.includes('assets/js/main.js')}`);
+    check('  raw file free of editor markup',
+      !/cms-ui|cms-add|contenteditable|data-cms-oi|data-cms-hot|__cms/.test(raw));
+  } catch (e) {
+    check('roundtrip', false, e.message);
+  }
+  done();
+}
+
+function runExhibitions(doc) {
+  const list = doc.querySelector('[data-cms="ausstellungen"]');
+  const li = list.children[0];
+  const gallery = li.querySelector('.gallery');
+
+  /* nested list: add a photo to the first exhibition */
+  const photo = gallery.children[0].cloneNode(true);
+  photo.setAttribute('href', 'assets/img/Farbspule.jpg');
+  photo.querySelector('img').setAttribute('src', 'assets/img/Farbspule.jpg');
+  gallery.appendChild(photo);
+
+  /* and change its title */
+  li.querySelector('h2').textContent = 'Neuer Titel';
+
+  const ops = editor.collectOps();
+  const items = ops['ausstellungen'] && ops['ausstellungen'][0].items;
+  const edits = items ? items[0].edits : [];
+  const nested = edits.find((e) => e.op === 'setItems');
+  const title = edits.find((e) => e.op === 'setInner');
+
+  check('nested gallery produces a nested setItems', !!nested,
+    JSON.stringify(edits.map((e) => e.op)));
+  check('  nested list has 4 photos', nested && nested.items.length === 4,
+    nested ? String(nested.items.length) : '-');
+  check('  nested path points at the gallery', nested && JSON.stringify(nested.path) === '[3]',
+    nested ? JSON.stringify(nested.path) : '-');
+  check('title edit rides along', !!title && title.html === 'Neuer Titel',
+    title ? title.html : '-');
+  check('other exhibitions untouched', items.slice(1).every((e) => e.edits.length === 0));
+
+  done();
+}
+</script>
+</body>
+</html>

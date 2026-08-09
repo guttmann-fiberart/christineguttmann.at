@@ -37,7 +37,7 @@
 
 <!-- Fullwidth exhibition slider -->
 <section class="slider" aria-label="Ausstellungsansichten">
-  <div class="slides">
+  <div class="slides" data-cms="startseite-slider" data-cms-kind="list" data-cms-label="Slideshow auf der Startseite">
     <div class="slide is-active">
       <img src="assets/img/2020-K3-Ausstellung-Pischelsdorf-Christine-Guttmann.jpg" alt="Ausstellungsansicht K3 Pischelsdorf 2020">
       <div class="slide-caption">
@@ -81,8 +81,8 @@
 
 <!-- Aktuell -->
 <section class="aktuell" id="aktuell">
-  <h3>aktuell</h3>
-  <p>
+  <h3 data-cms="aktuell-titel" data-cms-kind="text" data-cms-label="Überschrift">aktuell</h3>
+  <p data-cms="aktuell-text" data-cms-kind="rich" data-cms-label="Aktuelle Ausstellungen">
     2023 „Utopia — Meer Zukunft", K3 Pischelsdorf <span class="sep">////////////</span>
     2022 „Metamorphosen — Skepsis Virus", K3 Pischelsdorf <span class="sep">////////////</span>
     2021 „Das Wesen Pflanze in der Zukunft", K3 Pischelsdorf
@@ -101,7 +101,7 @@
     <li><button class="filter" data-filter="fotoaspekte">Fotoaspekte</button></li>
   </ul>
 
-  <div class="grid">
+  <div class="grid" data-cms="projekte" data-cms-kind="list" data-cms-label="Projekte / Galerie">
     <a class="item" data-cat="fotoaspekte" href="assets/img/Herztier-I-Christine-Guttmann.jpg" data-lightbox data-caption="g_34 Herztier I">
       <figure><img src="assets/img/Herztier-I-Christine-Guttmann.jpg" alt="Herztier I" loading="lazy"></figure>
       <h2>g_34 Herztier I</h2>
@@ -242,8 +242,8 @@
 </section>
 
 <footer class="site-footer">
-  <p><a href="mailto:fiberart@christineguttmann.at">fiberart@christineguttmann.at</a></p>
-  <p class="fine">Christine Guttmann · Klosterwiesgasse 44 · 8010 Graz · <a href="tel:+436508405066">+43&nbsp;650&nbsp;840&nbsp;50&nbsp;66</a></p>
+  <p data-cms="footer-email" data-cms-kind="rich" data-cms-global data-cms-label="Footer: E-Mail"><a href="mailto:fiberart@christineguttmann.at">fiberart@christineguttmann.at</a></p>
+  <p class="fine" data-cms="footer-adresse" data-cms-kind="rich" data-cms-global data-cms-label="Footer: Adresse">Christine Guttmann · Klosterwiesgasse 44 · 8010 Graz · <a href="tel:+436508405066">+43&nbsp;650&nbsp;840&nbsp;50&nbsp;66</a></p>
   <p class="fine legal">
     <a href="impressum.html">Impressum</a> ·
     <a href="datenschutz.html">Datenschutz</a> ·
