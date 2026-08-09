@@ -1,4 +1,4 @@
-/* Christine Guttmann — fiberART · Redesign */
+/* Christine Guttmann — Fiber Art · Redesign */
 
 (function () {
   'use strict';
