@@ -74,34 +74,45 @@ Two invariants to keep in mind if you touch the parser:
 
 ---
 
-## One-time setup for publishing
+## Publishing
 
-The CMS's **Veröffentlichen** button runs `git add -A && git commit && git push`.
-That needs a remote and stored credentials — do this once, on the machine that
-will be used for editing:
+This directory is the git repository root — not the parent folder. `cms/lib/git.js`
+resolves `ROOT` two levels up from itself, so moving the repo root would break the
+CMS. `index.html` sits at that root, so Pages serves the branch directly with no
+build step.
 
-1. **Create the repository** on GitHub (`christineguttmann.at`, public — GitHub
-   Pages needs public unless you have a paid plan).
+**Live:** <https://guttmann-fiberart.github.io/christineguttmann.at/>
+**Repo:** `guttmann-fiberart/christineguttmann.at` (public — Pages needs public on
+a free plan), branch `main`, Pages source *deploy from a branch* → `main`, `/ (root)`.
 
-2. **Connect it:**
-   ```sh
-   git remote add origin https://github.com/<user>/<repo>.git
-   git push -u origin main
-   ```
+The CMS's **Veröffentlichen** button runs `git add -A && git commit && git push`
+against that remote.
 
-3. **Turn on Pages:** repository → Settings → Pages → Source: *Deploy from a
-   branch* → Branch `main`, folder `/ (root)`. The site appears at
-   `https://<user>.github.io/<repo>/` after a minute or two.
+### Why an organisation rather than a personal account
 
-4. **Store the credentials** so she is never asked for a password: the first
-   `git push` from her machine opens Git Credential Manager's browser login.
-   Complete it once and Windows remembers it. Verify by pushing a second time
-   with no prompt — otherwise the CMS's publish button will appear to hang
-   while a hidden dialog waits for input.
+A GitHub user site's custom domain is applied to **every** project page on that
+account. On `sebastian-dor` — whose user site carries `sebastiandorfer.com` — this
+site was served at `sebastiandorfer.com/christineguttmann.at/`, and the plain
+`github.io` URL 301-redirected there. There is no per-repository opt-out. Hosting it
+under the `guttmann-fiberart` org, which has no user site, keeps it on its own URL.
+Add Christine as an org owner to hand the project over.
 
-5. **Custom domain** (optional): Settings → Pages → Custom domain, plus a
-   `CNAME` file in the repo root. Note that the CMS commits every file, so the
-   `CNAME` file stays put on its own.
+### Credentials on the editing machine
+
+The publish button must never meet an interactive prompt, or it appears to hang
+while a hidden dialog waits for input. On the current machine the GitHub CLI is the
+credential helper (`gh auth setup-git`), so pushes resolve silently. On a new machine,
+either repeat that, or complete Git Credential Manager's browser login once on the
+first `git push` — then verify a second push runs with no prompt.
+
+### Custom domain (not yet configured)
+
+To move to `christineguttmann.at`: Settings → Pages → Custom domain, plus a `CNAME`
+file in this directory. A repo-level custom domain overrides any inherited one. DNS
+needs four apex `A` records to GitHub's Pages IPs, or a `CNAME` record for a
+subdomain. Note the apex switch takes the current live WordPress site down, so
+stage it on a subdomain first. The CMS commits every file, so the `CNAME` file stays
+put on its own.
 
 ### A note on `cms/` being published
 
