@@ -221,7 +221,95 @@ function dialog(title, bodyNodes, actions) {
   el.dialogActions.replaceChildren(...actions);
   el.dialog.hidden = false;
 }
-const closeDialog = () => { el.dialog.hidden = true; };
+const closeDialog = () => { el.dialog.hidden = true; finishFocus(null); };
+
+/* ---------- image section (object-position) ---------- */
+
+let focusResolve = null;
+function finishFocus(value) {
+  const done = focusResolve;
+  focusResolve = null;
+  if (done) done(value);
+}
+
+function parsePosition(text) {
+  const words = { left: 0, top: 0, center: 50, right: 100, bottom: 100 };
+  const parts = String(text || '').trim().split(/\s+/).map((t) =>
+    t in words ? words[t] : (/%$/.test(t) ? parseFloat(t) : NaN));
+  const clamp = (v) => (Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 50);
+  return [clamp(parts[0]), clamp(parts.length > 1 ? parts[1] : 50)];
+}
+
+/**
+ * Opened by the editor. `frameAspect` is width/height of the slot the image
+ * is shown in. Resolves to an object-position like "30% 65%", or null when
+ * cancelled or when the image fits the slot anyway.
+ */
+function pickFocus(src, frameAspect, current) {
+  finishFocus(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.draggable = false;
+    img.className = 'crop-img';
+    img.alt = '';
+    img.onerror = () => { toast('Bild konnte nicht geladen werden', true); resolve(null); };
+    img.onload = () => {
+      const imgAspect = img.naturalWidth / img.naturalHeight;
+      // Visible part of the image, as a fraction of its width and height.
+      const fw = Math.min(1, frameAspect / imgAspect);
+      const fh = Math.min(1, imgAspect / frameAspect);
+      if (fw > 0.98 && fh > 0.98) { resolve(null); return; }  // nothing to choose
+
+      let [px, py] = parsePosition(current);
+      const stage = document.createElement('div');
+      stage.className = 'crop-stage';
+      const frame = document.createElement('div');
+      frame.className = 'crop-frame';
+      frame.style.width = `${fw * 100}%`;
+      frame.style.height = `${fh * 100}%`;
+      stage.append(img, frame);
+
+      const paint = () => {
+        frame.style.left = `${(px / 100) * (1 - fw) * 100}%`;
+        frame.style.top = `${(py / 100) * (1 - fh) * 100}%`;
+      };
+      // Centre the frame on the pointer, kept inside the image.
+      const moveTo = (e) => {
+        const r = stage.getBoundingClientRect();
+        const cx = (e.clientX - r.left) / r.width;
+        const cy = (e.clientY - r.top) / r.height;
+        if (fw < 1) px = Math.min(100, Math.max(0, ((cx - fw / 2) / (1 - fw)) * 100));
+        if (fh < 1) py = Math.min(100, Math.max(0, ((cy - fh / 2) / (1 - fh)) * 100));
+        paint();
+      };
+      stage.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        stage.setPointerCapture(e.pointerId);
+        moveTo(e);
+        const move = (ev) => moveTo(ev);
+        const up = () => { stage.removeEventListener('pointermove', move); stage.removeEventListener('pointerup', up); };
+        stage.addEventListener('pointermove', move);
+        stage.addEventListener('pointerup', up);
+      });
+      paint();
+
+      focusResolve = resolve;
+      dialog('Bildausschnitt wählen', [
+        p('Ziehe den hellen Rahmen auf den Teil des Bildes, der zu sehen sein soll.'),
+        stage,
+      ], [
+        button('Mitte', 'ghost', () => { px = 50; py = 50; paint(); }),
+        button('Abbrechen', '', closeDialog),
+        button('Übernehmen', 'primary', () => {
+          const value = `${Math.round(px)}% ${Math.round(py)}%`;
+          finishFocus(value);
+          closeDialog();
+        }),
+      ]);
+    };
+    img.src = '/' + src.replace(/^\/+/, '');
+  });
+}
 
 function p(text) { const n = document.createElement('p'); n.textContent = text; return n; }
 function pre(text) { const n = document.createElement('pre'); n.textContent = text; return n; }
@@ -373,6 +461,7 @@ window.CMSAdmin = {
     renderState();
   },
   pickImage: openPicker,
+  pickFocus,
   toast,
   hint(text) {
     el.hint.textContent = text || 'Klicke im Vorschaufenster auf einen Text oder ein Bild.';

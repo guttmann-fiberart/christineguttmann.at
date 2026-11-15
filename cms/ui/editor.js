@@ -99,7 +99,9 @@
 
   function attrOps(cur, orig, path) {
     const ops = [];
-    for (const name of CONTENT_ATTRS) {
+    // An image's inline style holds its chosen section (object-position).
+    const names = cur.tagName === 'IMG' ? CONTENT_ATTRS.concat('style') : CONTENT_ATTRS;
+    for (const name of names) {
       const a = cur.getAttribute(name);
       const b = orig.getAttribute(name);
       if (a === b) continue;
@@ -247,6 +249,22 @@
     img.setAttribute('src', chosen);
     const link = img.closest('a[data-lightbox], a.item');
     if (link && link.hasAttribute('href')) link.setAttribute('href', chosen);
+    // The old image's section means nothing for the new one.
+    if (img.style.objectPosition) img.style.objectPosition = '50% 50%';
+    markDirty();
+    await chooseSection(img);
+  }
+
+  /* Images shown with object-fit: cover only show part of themselves; let
+   * the user pick which part. Stored as inline object-position. */
+  const isCropped = (img) => getComputedStyle(img).objectFit === 'cover';
+
+  async function chooseSection(img) {
+    if (!isCropped(img) || !img.offsetWidth || !img.offsetHeight) return;
+    const current = img.style.objectPosition || getComputedStyle(img).objectPosition;
+    const pos = await admin.pickFocus(img.getAttribute('src'), img.offsetWidth / img.offsetHeight, current);
+    if (!pos || pos === img.style.objectPosition) return;
+    img.style.objectPosition = pos;
     markDirty();
   }
 
@@ -262,8 +280,11 @@
 
   /* ---------- list item controls ---------- */
 
+  let repaintSlider = () => {};
+
   function reindexAfterStructuralChange() {
     markDirty();
+    repaintSlider();
     bar.hidden = true;
     barTarget = null;
     barAnchor = null;
@@ -336,6 +357,7 @@
       list.insertBefore(copy, btn);
       wireItem(copy);
       markDirty();
+      repaintSlider();
       copy.scrollIntoView({ block: 'center', behavior: 'smooth' });
       const img = copy.querySelector('img');
       if (img) await swapImage(img);
@@ -414,6 +436,9 @@
         const buttons = [];
         if (img) {
           buttons.push(makeButton('Bild tauschen', 'Anderes Bild wählen oder hochladen', () => swapImage(img)));
+          if (isCropped(img)) {
+            buttons.push(makeButton('Ausschnitt', 'Sichtbaren Bildausschnitt wählen', () => chooseSection(img)));
+          }
           buttons.push(makeButton('Beschreibung', 'Bildbeschreibung bearbeiten', () => editAlt(img)));
         }
         if (inList) buttons.push(...itemButtons(item, item.parentElement));
@@ -455,13 +480,17 @@
   /* The site's slider normally auto-rotates; here it only steps on demand so
    * every slide can be reached and edited. */
   function wireSlider() {
-    const slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+    // Read the slides fresh each time: they can be added, copied, deleted or
+    // reordered while editing.
+    const getSlides = () => Array.prototype.slice.call(document.querySelectorAll('.slides > .slide'));
     const dotsWrap = document.querySelector('.slider-dots');
-    if (!slides.length) return;
+    if (!getSlides().length) return;
 
-    let current = Math.max(0, slides.findIndex((s) => s.classList.contains('is-active')));
+    let current = Math.max(0, getSlides().findIndex((s) => s.classList.contains('is-active')));
 
     const paint = () => {
+      const slides = getSlides();
+      current = Math.min(current, slides.length - 1);
       slides.forEach((s, i) => s.classList.toggle('is-active', i === current));
       if (!dotsWrap) return;
       dotsWrap.replaceChildren(...slides.map((_, i) => {
@@ -473,11 +502,12 @@
       }));
     };
 
-    const go = (delta) => { current = (current + delta + slides.length) % slides.length; paint(); };
+    const go = (delta) => { const n = getSlides().length; current = (current + delta + n) % n; paint(); };
     const prev = document.querySelector('.slider-arrow.prev');
     const next = document.querySelector('.slider-arrow.next');
     if (prev) prev.addEventListener('click', (e) => { e.preventDefault(); go(-1); });
     if (next) next.addEventListener('click', (e) => { e.preventDefault(); go(1); });
+    repaintSlider = paint;
     paint();
   }
 

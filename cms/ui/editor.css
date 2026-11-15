@@ -22,6 +22,9 @@
 }
 
 .cms-editing [data-cms-hot] { position: relative; }
+/* …but slides are stacked on top of each other and must stay absolute, or
+   they flow vertically and the slider's overflow clips all but the first. */
+.cms-editing .slides > .slide[data-cms-hot] { position: absolute; }
 .cms-editing [data-cms-hot]:hover { box-shadow: 0 0 0 2px rgb(122 46 46 / 45%); }
 
 .cms-editing [data-cms] img { cursor: pointer; }
