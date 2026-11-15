@@ -250,22 +250,39 @@
     const link = img.closest('a[data-lightbox], a.item');
     if (link && link.hasAttribute('href')) link.setAttribute('href', chosen);
     // The old image's section means nothing for the new one.
-    if (img.style.objectPosition) img.style.objectPosition = '50% 50%';
+    if (img.style.objectPosition || img.style.scale) applySection(img, '50% 50%', 1);
     markDirty();
     await chooseSection(img);
   }
 
   /* Images shown with object-fit: cover only show part of themselves; let
-   * the user pick which part. Stored as inline object-position. */
+   * the user pick which part, and zoom in. Stored inline as
+   * object-position + transform-origin (same value) + scale. The CSS `scale`
+   * property composes with the site's hover `transform: scale(1.04)`. */
   const isCropped = (img) => getComputedStyle(img).objectFit === 'cover';
+
+  function applySection(img, pos, zoom) {
+    img.style.objectPosition = pos;
+    if (zoom > 1.001) {
+      img.style.transformOrigin = pos;
+      img.style.scale = String(zoom);
+    } else {
+      img.style.removeProperty('transform-origin');
+      img.style.removeProperty('scale');
+    }
+  }
 
   async function chooseSection(img) {
     if (!isCropped(img) || !img.offsetWidth || !img.offsetHeight) return;
-    const current = img.style.objectPosition || getComputedStyle(img).objectPosition;
-    const pos = await admin.pickFocus(img.getAttribute('src'), img.offsetWidth / img.offsetHeight, current);
-    if (!pos || pos === img.style.objectPosition) return;
-    img.style.objectPosition = pos;
-    markDirty();
+    const current = {
+      pos: img.style.objectPosition || getComputedStyle(img).objectPosition,
+      zoom: parseFloat(img.style.scale) || 1,
+    };
+    const picked = await admin.pickFocus(img.getAttribute('src'), img.offsetWidth / img.offsetHeight, current);
+    if (!picked) return;
+    const before = img.getAttribute('style');
+    applySection(img, picked.pos, picked.zoom);
+    if (img.getAttribute('style') !== before) markDirty();
   }
 
   function editAlt(img) {

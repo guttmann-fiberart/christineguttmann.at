@@ -240,10 +240,17 @@ function parsePosition(text) {
   return [clamp(parts[0]), clamp(parts.length > 1 ? parts[1] : 50)];
 }
 
+const MAX_ZOOM = 4;
+
 /**
  * Opened by the editor. `frameAspect` is width/height of the slot the image
- * is shown in. Resolves to an object-position like "30% 65%", or null when
- * cancelled or when the image fits the slot anyway.
+ * is shown in; `current` is { pos: "30% 65%", zoom: 1.5 }. Resolves to a new
+ * { pos, zoom }, or null when cancelled.
+ *
+ * The page shows the result as object-position: pos; transform-origin: pos;
+ * scale: zoom. With origin and position equal, the visible part of the image
+ * is exactly the frame drawn here: a fraction fw/zoom wide, starting at
+ * pos * (1 - fw/zoom) — the same formula as plain object-position.
  */
 function pickFocus(src, frameAspect, current) {
   finishFocus(null);
@@ -255,54 +262,124 @@ function pickFocus(src, frameAspect, current) {
     img.onerror = () => { toast('Bild konnte nicht geladen werden', true); resolve(null); };
     img.onload = () => {
       const imgAspect = img.naturalWidth / img.naturalHeight;
-      // Visible part of the image, as a fraction of its width and height.
+      // Part of the image the slot shows at zoom 1, as a fraction of its size.
       const fw = Math.min(1, frameAspect / imgAspect);
       const fh = Math.min(1, imgAspect / frameAspect);
-      if (fw > 0.98 && fh > 0.98) { resolve(null); return; }  // nothing to choose
+      const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-      let [px, py] = parsePosition(current);
+      // State: zoom and the frame's centre, in image fractions.
+      let zoom = clamp(Number(current && current.zoom) || 1, 1, MAX_ZOOM);
+      const [px0, py0] = parsePosition(current && current.pos);
+      let cx = (px0 / 100) * (1 - fw / zoom) + fw / zoom / 2;
+      let cy = (py0 / 100) * (1 - fh / zoom) + fh / zoom / 2;
+
+      const size = () => [fw / zoom, fh / zoom];
+      const position = () => {
+        const [w, h] = size();
+        return [w < 1 ? ((cx - w / 2) / (1 - w)) * 100 : 50, h < 1 ? ((cy - h / 2) / (1 - h)) * 100 : 50];
+      };
+
       const stage = document.createElement('div');
       stage.className = 'crop-stage';
       const frame = document.createElement('div');
       frame.className = 'crop-frame';
-      frame.style.width = `${fw * 100}%`;
-      frame.style.height = `${fh * 100}%`;
+      const handle = document.createElement('div');
+      handle.className = 'crop-handle';
+      handle.title = 'Ziehen zum Vergrößern oder Verkleinern';
+      frame.appendChild(handle);
       stage.append(img, frame);
 
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '1';
+      slider.max = String(MAX_ZOOM);
+      slider.step = '0.01';
+      const zoomLabel = document.createElement('span');
+      const zoomRow = document.createElement('label');
+      zoomRow.className = 'crop-zoom';
+      zoomRow.append('Zoom', slider, zoomLabel);
+
       const paint = () => {
-        frame.style.left = `${(px / 100) * (1 - fw) * 100}%`;
-        frame.style.top = `${(py / 100) * (1 - fh) * 100}%`;
+        const [w, h] = size();
+        cx = clamp(cx, w / 2, 1 - w / 2);
+        cy = clamp(cy, h / 2, 1 - h / 2);
+        frame.style.width = `${w * 100}%`;
+        frame.style.height = `${h * 100}%`;
+        frame.style.left = `${(cx - w / 2) * 100}%`;
+        frame.style.top = `${(cy - h / 2) * 100}%`;
+        slider.value = String(zoom);
+        zoomLabel.textContent = `${Math.round(zoom * 100)} %`;
       };
-      // Centre the frame on the pointer, kept inside the image.
-      const moveTo = (e) => {
+
+      const pointAt = (e) => {
         const r = stage.getBoundingClientRect();
-        const cx = (e.clientX - r.left) / r.width;
-        const cy = (e.clientY - r.top) / r.height;
-        if (fw < 1) px = Math.min(100, Math.max(0, ((cx - fw / 2) / (1 - fw)) * 100));
-        if (fh < 1) py = Math.min(100, Math.max(0, ((cy - fh / 2) / (1 - fh)) * 100));
-        paint();
+        return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
       };
+
       stage.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         stage.setPointerCapture(e.pointerId);
-        moveTo(e);
-        const move = (ev) => moveTo(ev);
-        const up = () => { stage.removeEventListener('pointermove', move); stage.removeEventListener('pointerup', up); };
+        const [ux, uy] = pointAt(e);
+        const [w, h] = size();
+        let move;
+
+        if (e.target === handle) {
+          // Resize from the bottom-right corner; the top-left corner stays put.
+          const ax = cx - w / 2;
+          const ay = cy - h / 2;
+          move = (ev) => {
+            const [mx, my] = pointAt(ev);
+            const wide = Math.max(mx - ax, ((my - ay) * fw) / fh, 0.0001);
+            zoom = clamp(fw / wide, 1, MAX_ZOOM);
+            const [nw, nh] = size();
+            cx = ax + nw / 2;
+            cy = ay + nh / 2;
+            paint();
+          };
+        } else {
+          // Grab the frame where it was clicked; a click outside centres it there first.
+          const inside = Math.abs(ux - cx) <= w / 2 && Math.abs(uy - cy) <= h / 2;
+          if (!inside) { cx = ux; cy = uy; paint(); }
+          const dx = cx - ux;
+          const dy = cy - uy;
+          move = (ev) => {
+            const [mx, my] = pointAt(ev);
+            cx = mx + dx;
+            cy = my + dy;
+            paint();
+          };
+        }
+
+        const up = () => {
+          stage.removeEventListener('pointermove', move);
+          stage.removeEventListener('pointerup', up);
+          stage.removeEventListener('pointercancel', up);
+        };
         stage.addEventListener('pointermove', move);
         stage.addEventListener('pointerup', up);
+        stage.addEventListener('pointercancel', up);
       });
+
+      stage.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        zoom = clamp(zoom * Math.exp(-e.deltaY * 0.0015), 1, MAX_ZOOM);
+        paint();
+      }, { passive: false });
+
+      slider.addEventListener('input', () => { zoom = clamp(Number(slider.value), 1, MAX_ZOOM); paint(); });
       paint();
 
       focusResolve = resolve;
       dialog('Bildausschnitt wählen', [
-        p('Ziehe den hellen Rahmen auf den Teil des Bildes, der zu sehen sein soll.'),
+        p('Rahmen verschieben, um den sichtbaren Teil zu wählen. Mit der Ecke unten rechts, dem Mausrad oder dem Regler hineinzoomen.'),
         stage,
+        zoomRow,
       ], [
-        button('Mitte', 'ghost', () => { px = 50; py = 50; paint(); }),
+        button('Zurücksetzen', 'ghost', () => { zoom = 1; cx = 0.5; cy = 0.5; paint(); }),
         button('Abbrechen', '', closeDialog),
         button('Übernehmen', 'primary', () => {
-          const value = `${Math.round(px)}% ${Math.round(py)}%`;
-          finishFocus(value);
+          const [x, y] = position();
+          finishFocus({ pos: `${Math.round(x)}% ${Math.round(y)}%`, zoom: Math.round(zoom * 100) / 100 });
           closeDialog();
         }),
       ]);
